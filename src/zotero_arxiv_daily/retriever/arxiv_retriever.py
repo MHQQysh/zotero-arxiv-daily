@@ -119,14 +119,14 @@ class ArxivRetriever(BaseRetriever):
         categories = list(self.config.source.arxiv.category)
         include_cross_list = self.config.source.arxiv.get("include_cross_list", False)
     
-        target_date = datetime.now(timezone.utc).date() - timedelta(days=1)
+        target_date = datetime.now(timezone.utc).date() - timedelta(days=2)
         start = target_date.strftime("%Y%m%d") + "0000"
         end = target_date.strftime("%Y%m%d") + "2359"
     
         category_query = " OR ".join([f"cat:{c}" for c in categories])
         query = f"({category_query}) AND submittedDate:[{start} TO {end}]"
     
-        logger.info(f"Retrieving arXiv papers submitted yesterday: {query}")
+        logger.info(f"Retrieving arXiv papers submitted two days ago: {query}")
     
         search = arxiv.Search(
             query=query,
@@ -156,11 +156,6 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_tar(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_html(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_pdf(raw_paper)
         return Paper(
             source=self.name,
             title=title,
@@ -168,7 +163,7 @@ class ArxivRetriever(BaseRetriever):
             abstract=abstract,
             url=raw_paper.entry_id,
             pdf_url=pdf_url,
-            full_text=full_text,
+            full_text=None,
         )
 
 

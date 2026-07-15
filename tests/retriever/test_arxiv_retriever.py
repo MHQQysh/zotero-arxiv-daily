@@ -63,6 +63,56 @@ def test_arxiv_retriever(config, mock_feedparser, monkeypatch):
 
     assert len(papers) == len(new_entries)
     assert set(p.title for p in papers) == set(e.title for e in new_entries)
+    assert all(p.full_text is None for p in papers)
+
+
+def test_arxiv_retriever_uses_two_days_ago_date(config, monkeypatch):
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.base.sleep", lambda _: None)
+    captured = {}
+
+    class FixedDatetime(arxiv_retriever.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 15, tzinfo=tz)
+
+    class FakeClient:
+        def __init__(self, **kw):
+            pass
+
+        def results(self, search):
+            captured["query"] = search.query
+            return iter([])
+
+    monkeypatch.setattr(arxiv_retriever, "datetime", FixedDatetime)
+    monkeypatch.setattr(arxiv_retriever.arxiv, "Client", FakeClient)
+
+    retriever = ArxivRetriever(config)
+    papers = retriever.retrieve_papers()
+
+    assert papers == []
+    assert "submittedDate:[202607130000 TO 202607132359]" in captured["query"]
+
+
+def test_convert_to_paper_skips_full_text_downloads(config, monkeypatch):
+    def fail_download(*args, **kwargs):
+        raise AssertionError("arXiv conversion should not download full text")
+
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_html", fail_download)
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_pdf", fail_download)
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_tar", fail_download)
+
+    raw_paper = SimpleNamespace(
+        title="Title only",
+        authors=[SimpleNamespace(name="Author A")],
+        summary="Abstract only.",
+        pdf_url="https://arxiv.org/pdf/2607.00001",
+        entry_id="https://arxiv.org/abs/2607.00001",
+    )
+    paper = ArxivRetriever(config).convert_to_paper(raw_paper)
+
+    assert paper.title == "Title only"
+    assert paper.abstract == "Abstract only."
+    assert paper.full_text is None
 
 
 def test_run_with_hard_timeout_returns_value():
