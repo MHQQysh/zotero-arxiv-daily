@@ -40,6 +40,7 @@ def test_arxiv_retriever(config, mock_feedparser, monkeypatch):
             summary="Test abstract",
             pdf_url=f"https://arxiv.org/pdf/{pid}",
             entry_id=f"https://arxiv.org/abs/{pid}",
+            primary_category=config.source.arxiv.category[0],
             source_url=lambda pid=pid: f"https://arxiv.org/e-print/{pid}",
         ))
 
