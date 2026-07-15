@@ -119,6 +119,87 @@ def test_fetch_zotero_corpus(config, monkeypatch):
     assert "survey/topic-a" in corpus[0].paths[0]
 
 
+def test_fetch_zotero_corpus_reads_existing_cache(config, tmp_path, monkeypatch):
+    from omegaconf import open_dict
+
+    cache_path = tmp_path / "zotero_corpus.json"
+    cache_path.write_text(
+        """{
+  "schema_version": 1,
+  "generated_at": "2026-07-15T00:00:00Z",
+  "papers": [
+    {
+      "title": "Cached Paper",
+      "abstract": "Cached abstract.",
+      "added_date": "2026-07-14T12:00:00Z",
+      "paths": ["reading/core"]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    with open_dict(config):
+        config.zotero.corpus_cache_path = str(cache_path)
+
+    def fail_zotero(*args, **kwargs):
+        raise AssertionError("Zotero API should not be called when cache exists")
+
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", fail_zotero)
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+    corpus = executor.fetch_zotero_corpus()
+
+    assert len(corpus) == 1
+    assert corpus[0].title == "Cached Paper"
+    assert corpus[0].paths == ["reading/core"]
+
+
+def test_fetch_zotero_corpus_writes_cache_when_missing(config, tmp_path, monkeypatch):
+    from omegaconf import open_dict
+    from tests.canned_responses import make_stub_zotero_client
+
+    cache_path = tmp_path / "zotero_corpus.json"
+    with open_dict(config):
+        config.zotero.corpus_cache_path = str(cache_path)
+
+    stub_zot = make_stub_zotero_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", lambda *a, **kw: stub_zot)
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+    corpus = executor.fetch_zotero_corpus()
+
+    assert len(corpus) == 2
+    assert cache_path.exists()
+    assert "Stub Paper 1" in cache_path.read_text(encoding="utf-8")
+
+
+def test_fetch_zotero_corpus_refreshes_existing_cache(config, tmp_path, monkeypatch):
+    from omegaconf import open_dict
+    from tests.canned_responses import make_stub_zotero_client
+
+    cache_path = tmp_path / "zotero_corpus.json"
+    cache_path.write_text(
+        '{"papers":[{"title":"Old","abstract":"Old abstract","added_date":"2026-01-01T00:00:00Z","paths":[]}]}',
+        encoding="utf-8",
+    )
+    with open_dict(config):
+        config.zotero.corpus_cache_path = str(cache_path)
+        config.zotero.refresh_corpus_cache = True
+
+    stub_zot = make_stub_zotero_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", lambda *a, **kw: stub_zot)
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+    corpus = executor.fetch_zotero_corpus()
+
+    assert [paper.title for paper in corpus] == ["Stub Paper 1", "Stub Paper 2"]
+    assert "Old abstract" not in cache_path.read_text(encoding="utf-8")
+
+
 def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
     from tests.canned_responses import make_stub_zotero_client
 

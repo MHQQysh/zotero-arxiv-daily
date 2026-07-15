@@ -2,6 +2,8 @@ zotero:
   user_id: ${oc.env:ZOTERO_ID}
   api_key: ${oc.env:ZOTERO_KEY}
   include_path: null # Or set a list of glob patterns, e.g. ["2026/survey/**","2026/reading-group/**"]
+  corpus_cache_path: data/zotero_corpus.json
+  refresh_corpus_cache: false
 
 email:
   sender: ${oc.env:SENDER}
@@ -11,11 +13,12 @@ email:
   sender_password: ${oc.env:SENDER_PASSWORD}
 
 llm:
+  language: Simplified Chinese
   api:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: ${oc.env:OPENAI_API_BASE}
   generation_kwargs:
-    model: gpt-4o-mini
+    model: deepseek-v4-flash
 
 source:
   arxiv:
@@ -23,4 +26,7 @@ source:
 
 executor:
   debug: ${oc.env:DEBUG,null}
+  send_empty: true
+  max_paper_num: 100
   source: ['arxiv']
+  reranker: local

@@ -55,6 +55,41 @@ def test_tldr_truncates_long_prompt(llm_params):
     assert result is not None
 
 
+def test_tldr_accepts_nested_generation_kwargs_and_language():
+    from types import SimpleNamespace
+    from omegaconf import OmegaConf
+
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="中文摘要"))],
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    paper = make_sample_paper()
+    config = OmegaConf.create(
+        {
+            "language": "English",
+            "generation_kwargs": {"model": "???"},
+            "api": {
+                "generation_kwargs": {
+                    "model": "deepseek-v4-flash",
+                    "language": "Simplified Chinese",
+                }
+            },
+        }
+    )
+
+    result = paper.generate_tldr(client, config)
+
+    assert result == "中文摘要"
+    assert calls[0]["model"] == "deepseek-v4-flash"
+    assert "language" not in calls[0]
+    assert "Simplified Chinese" in calls[0]["messages"][0]["content"]
+
+
 # ---------------------------------------------------------------------------
 # generate_affiliations
 # ---------------------------------------------------------------------------

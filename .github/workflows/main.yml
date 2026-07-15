@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 22 * * *'
 
+permissions:
+  contents: write
+
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
@@ -29,6 +32,16 @@ jobs:
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
         run: |
           printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
-          echo "Use custom config: "
-          cat config/custom.yaml
           uv run src/zotero_arxiv_daily/main.py
+
+      - name: Commit Zotero corpus cache
+        run: |
+          if [ -n "$(git status --porcelain data/zotero_corpus.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/zotero_corpus.json
+            git commit -m "chore: update zotero corpus cache"
+            git push
+          else
+            echo "No Zotero corpus cache changes to commit."
+          fi

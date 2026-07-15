@@ -6,7 +6,45 @@ import tiktoken
 from openai import OpenAI
 from loguru import logger
 import json
+from omegaconf import DictConfig, OmegaConf
 RawPaperItem = TypeVar('RawPaperItem')
+
+
+def _dictconfig_to_dict(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, DictConfig):
+        return OmegaConf.to_container(value, resolve=True)
+    return dict(value)
+
+
+def _get_llm_generation_kwargs(llm_params: dict) -> dict:
+    candidates = []
+    if llm_params.get("generation_kwargs") is not None:
+        candidates.append(llm_params.get("generation_kwargs"))
+    api_params = llm_params.get("api", {})
+    if api_params and api_params.get("generation_kwargs") is not None:
+        candidates.append(api_params.get("generation_kwargs"))
+
+    for candidate in candidates:
+        try:
+            kwargs = _dictconfig_to_dict(candidate)
+        except Exception:
+            continue
+        if isinstance(kwargs, dict) and kwargs.get("model") and kwargs.get("model") != "???":
+            kwargs.pop("language", None)
+            return kwargs
+    return {}
+
+
+def _get_llm_language(llm_params: dict) -> str:
+    language = llm_params.get("language", None)
+    api_params = llm_params.get("api", {})
+    nested_generation_kwargs = api_params.get("generation_kwargs", {}) if api_params else {}
+    nested_language = nested_generation_kwargs.get("language", None) if nested_generation_kwargs else None
+    if nested_language and language in (None, "English"):
+        return nested_language
+    return language or "English"
 
 @dataclass
 class Paper:
@@ -22,7 +60,7 @@ class Paper:
     score: Optional[float] = None
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
-        lang = llm_params.get('language', 'English')
+        lang = _get_llm_language(llm_params)
         prompt = f"Given the following information of a paper, generate a one-sentence TLDR summary in {lang}:\n\n"
         if self.title:
             prompt += f"Title:\n {self.title}\n\n"
@@ -51,7 +89,7 @@ class Paper:
                 },
                 {"role": "user", "content": prompt},
             ],
-            **llm_params.get('generation_kwargs', {})
+            **_get_llm_generation_kwargs(llm_params)
         )
         tldr = response.choices[0].message.content
         return tldr
@@ -83,7 +121,7 @@ class Paper:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                **llm_params.get('generation_kwargs', {})
+                **_get_llm_generation_kwargs(llm_params)
             )
             affiliations = affiliations.choices[0].message.content
 

@@ -144,7 +144,7 @@ class ArxivRetriever(BaseRetriever):
             ]
     
         if self.config.executor.debug:
-            raw_papers = raw_papers[:10]
+            raw_papers = raw_papers[:100]
     
         return raw_papers
 
