@@ -115,45 +115,37 @@ class ArxivRetriever(BaseRetriever):
 
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
         client = arxiv.Client(num_retries=10, delay_seconds=10)
-        query = '+'.join(self.config.source.arxiv.category)
+    
+        categories = list(self.config.source.arxiv.category)
         include_cross_list = self.config.source.arxiv.get("include_cross_list", False)
-        # Get the latest paper from arxiv rss feed
-        feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
-        if 'Feed error for query' in feed.feed.title:
-            raise Exception(f"Invalid ARXIV_QUERY: {query}.")
-        raw_papers = []
-        allowed_announce_types = {"new", "cross"} if include_cross_list else {"new"}
-        all_paper_ids = [
-            i.id.removeprefix("oai:arXiv.org:")
-            for i in feed.entries
-            if i.get("arxiv_announce_type", "new") in allowed_announce_types
-        ]
+    
+        target_date = datetime.now(timezone.utc).date() - timedelta(days=1)
+        start = target_date.strftime("%Y%m%d") + "0000"
+        end = target_date.strftime("%Y%m%d") + "2359"
+    
+        category_query = " OR ".join([f"cat:{c}" for c in categories])
+        query = f"({category_query}) AND submittedDate:[{start} TO {end}]"
+    
+        logger.info(f"Retrieving arXiv papers submitted yesterday: {query}")
+    
+        search = arxiv.Search(
+            query=query,
+            max_results=1000,
+            sort_by=arxiv.SortCriterion.SubmittedDate,
+            sort_order=arxiv.SortOrder.Descending,
+        )
+    
+        raw_papers = list(client.results(search))
+    
+        if not include_cross_list:
+            raw_papers = [
+                p for p in raw_papers
+                if getattr(p, "primary_category", None) in categories
+            ]
+    
         if self.config.executor.debug:
-            all_paper_ids = all_paper_ids[:10]
-
-        # Get full information of each paper from arxiv api
-        bar = tqdm(total=len(all_paper_ids))
-        max_batch_retries = 5
-        batch_retry_delay = 30
-        for i in range(0, len(all_paper_ids), 20):
-            search = arxiv.Search(id_list=all_paper_ids[i:i + 20])
-            for attempt in range(max_batch_retries):
-                try:
-                    batch = list(client.results(search))
-                    bar.update(len(batch))
-                    raw_papers.extend(batch)
-                    break
-                except arxiv.HTTPError as exc:
-                    if exc.status == 429 and attempt < max_batch_retries - 1:
-                        wait = batch_retry_delay * (attempt + 1)
-                        logger.warning(f"arXiv API 429 on batch {i // 20}, retry {attempt + 1}/{max_batch_retries} in {wait}s")
-                        sleep(wait)
-                    else:
-                        raise
-            if i + 20 < len(all_paper_ids):
-                sleep(3)
-        bar.close()
-
+            raw_papers = raw_papers[:10]
+    
         return raw_papers
 
     def convert_to_paper(self, raw_paper: ArxivResult) -> Paper:
