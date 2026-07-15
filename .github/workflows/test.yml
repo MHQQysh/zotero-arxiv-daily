@@ -18,6 +18,8 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v7.1.4
 
+      - name: Show checked out commit
+        run: git rev-parse --short HEAD
 
       - name: Run script
         env:

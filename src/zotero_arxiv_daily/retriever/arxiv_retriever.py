@@ -136,14 +136,17 @@ class ArxivRetriever(BaseRetriever):
         )
     
         raw_papers = list(client.results(search))
+        logger.info(f"Retrieved {len(raw_papers)} raw arXiv papers before category filtering")
     
         if not include_cross_list:
             raw_papers = [
                 p for p in raw_papers
                 if getattr(p, "primary_category", None) in categories
             ]
+            logger.info(f"Kept {len(raw_papers)} arXiv papers after primary-category filtering")
     
         if self.config.executor.debug:
+            logger.info(f"Debug mode: keeping up to 100 arXiv papers, from {len(raw_papers)} candidates")
             raw_papers = raw_papers[:100]
     
         return raw_papers
