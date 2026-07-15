@@ -42,6 +42,9 @@ class Executor:
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
         self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
 
+    def should_use_zotero_corpus(self) -> bool:
+        return self.config.executor.reranker != "none"
+
     def _zotero_corpus_cache_path(self) -> Path | None:
         cache_path = self.config.zotero.get("corpus_cache_path", None)
         if cache_path in (None, ""):
@@ -163,11 +166,15 @@ class Executor:
 
     
     def run(self):
-        corpus = self.fetch_zotero_corpus()
-        corpus = self.filter_corpus(corpus)
-        if len(corpus) == 0:
-            logger.error(f"No zotero papers found. Please check your zotero settings:\n{self.config.zotero}")
-            return
+        corpus = []
+        if self.should_use_zotero_corpus():
+            corpus = self.fetch_zotero_corpus()
+            corpus = self.filter_corpus(corpus)
+            if len(corpus) == 0:
+                logger.error(f"No zotero papers found. Please check your zotero settings:\n{self.config.zotero}")
+                return
+        else:
+            logger.info("Reranker is 'none'; skipping Zotero corpus loading and similarity scoring.")
         all_papers = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
@@ -180,7 +187,7 @@ class Executor:
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
         reranked_papers = []
         if len(all_papers) > 0:
-            logger.info("Reranking papers...")
+            logger.info("Selecting papers...")
             reranked_papers = self.reranker.rerank(all_papers, corpus)
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             logger.info("Generating TLDR and affiliations...")

@@ -29,4 +29,4 @@ executor:
   send_empty: true
   max_paper_num: 100
   source: ['arxiv']
-  reranker: local
+  reranker: none

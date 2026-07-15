@@ -290,6 +290,55 @@ def test_run_end_to_end(config, monkeypatch):
     assert "text/html" in email_body
 
 
+def test_run_with_none_reranker_skips_zotero(config, monkeypatch):
+    """When reranker=none, arXiv papers are sent in retrieval order without Zotero."""
+    from email import message_from_string
+    import smtplib
+
+    from omegaconf import open_dict
+
+    from tests.canned_responses import make_sample_paper, make_stub_openai_client, make_stub_smtp
+
+    with open_dict(config):
+        config.executor.source = ["arxiv"]
+        config.executor.reranker = "none"
+        config.executor.send_empty = False
+        config.executor.max_paper_num = 2
+
+    def fail_zotero(*args, **kwargs):
+        raise AssertionError("Zotero should not be loaded when reranker=none")
+
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", fail_zotero)
+
+    stub_client = make_stub_openai_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", lambda **kw: stub_client)
+    retrieved = [
+        make_sample_paper(title="First Paper", score=123),
+        make_sample_paper(title="Second Paper", score=456),
+        make_sample_paper(title="Third Paper", score=789),
+    ]
+
+    import zotero_arxiv_daily.retriever.arxiv_retriever  # noqa: F401
+
+    from zotero_arxiv_daily.retriever.base import registered_retrievers
+
+    monkeypatch.setattr(registered_retrievers["arxiv"], "retrieve_papers", lambda self: retrieved)
+
+    sent = []
+    monkeypatch.setattr(smtplib, "SMTP", make_stub_smtp(sent))
+
+    executor = Executor(config)
+    executor.run()
+
+    assert len(sent) == 1
+    _, _, email_body = sent[0]
+    message = message_from_string(email_body)
+    html = message.get_payload(decode=True).decode("utf-8")
+    assert "First Paper" in html
+    assert "Second Paper" in html
+    assert "Third Paper" not in html
+
+
 def test_run_no_papers_send_empty_false(config, monkeypatch):
     """When no papers are found and send_empty=false, no email is sent."""
     import smtplib
